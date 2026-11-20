@@ -1,0 +1,23 @@
+# Demo: ArgoCD tries to sync manifests that violate the Gatekeeper policies.
+# Expected result: SyncFailed, "admission webhook validation.gatekeeper.sh denied the request".
+#   kubectl apply -f deploy/argocd/demo/noncompliant-app.yaml
+#   kubectl -n argocd get application noncompliant-demo -o jsonpath='{.status.operationState.message}'
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: noncompliant-demo
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/HanineKhemir/devops-sre-lab.git
+    targetRevision: main
+    path: policies/tests
+    directory:
+      include: "bad-*.yaml"
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: catalog
+  syncPolicy:
+    automated: {}
+    retry: { limit: 1 }
