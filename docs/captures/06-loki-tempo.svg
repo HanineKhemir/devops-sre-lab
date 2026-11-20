@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="687" height="350" viewBox="0 0 687 350">
+<rect width="687" height="350" rx="8" fill="#0d1117"/>
+<rect width="687" height="30" rx="8" fill="#21262d"/>
+<rect y="22" width="687" height="8" fill="#21262d"/>
+<circle cx="18" cy="15" r="6" fill="#ff5f56"/>
+<circle cx="38" cy="15" r="6" fill="#ffbd2e"/>
+<circle cx="58" cy="15" r="6" fill="#27c93f"/>
+<text x="343.5" y="20" fill="#8b949e" font-family="Menlo,monospace" font-size="12" text-anchor="middle">Loki → Tempo — corrélation trace_id</text>
+<g font-family="Menlo,Consolas,monospace" font-size="13" xml:space="preserve" style="white-space:pre">
+<text x="16" y="60" fill="#7ee787">logcli&gt; {namespace="catalog", level="error"}  (limit 1)</text>
+<text x="16" y="78" fill="#e6edf3">{</text>
+<text x="16" y="96" fill="#e6edf3">    "timestamp": "2026-11-20T15:29:38.161885+00:00",</text>
+<text x="16" y="114" fill="#e6edf3">    "level": "error",</text>
+<text x="16" y="132" fill="#e6edf3">    "logger": "catalog",</text>
+<text x="16" y="150" fill="#e6edf3">    "message": "simulated downstream failure",</text>
+<text x="16" y="168" fill="#e6edf3">    "trace_id": "24922fdd04417e5337b217607012383e",</text>
+<text x="16" y="186" fill="#e6edf3">    "span_id": "663c113c9788ad9b",</text>
+<text x="16" y="204" fill="#e6edf3">    "endpoint": "/flaky"</text>
+<text x="16" y="222" fill="#e6edf3">}</text>
+<text x="16" y="240" fill="#e6edf3"></text>
+<text x="16" y="258" fill="#7ee787">$ curl tempo:3200/api/traces/24922fdd04417e5337b217607012383e</text>
+<text x="16" y="276" fill="#e6edf3">  span GET /flaky http send       service=catalog-api     0.02 ms  STATUS_CODE_ERROR</text>
+<text x="16" y="294" fill="#e6edf3">  span GET /flaky http send       service=catalog-api     0.01 ms  UNSET</text>
+<text x="16" y="312" fill="#e6edf3">  span GET /flaky http send       service=catalog-api     0.01 ms  UNSET</text>
+<text x="16" y="330" fill="#e6edf3">  span GET /flaky                 service=catalog-api     0.80 ms  STATUS_CODE_ERROR</text>
+</g>
+</svg>

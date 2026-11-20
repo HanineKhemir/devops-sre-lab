@@ -1,0 +1,16 @@
+$ pytest
+..........................................................               [100%]
+---------- coverage: platform darwin, python 3.11.9-final-0 ----------
+Name               Stmts   Miss Branch BrPart  Cover   Missing
+--------------------------------------------------------------
+app/__init__.py        0      0      0      0   100%
+app/catalog.py        75      0     20      0   100%
+app/config.py         26      0      6      0   100%
+app/main.py          108      0      6      0   100%
+app/telemetry.py      45      0      8      0   100%
+--------------------------------------------------------------
+TOTAL                254      0     40      0   100%
+Coverage XML written to file coverage.xml
+Coverage LCOV written to file coverage.lcov
+Required test coverage of 85% reached. Total coverage: 100.00%
+58 passed in 0.38s

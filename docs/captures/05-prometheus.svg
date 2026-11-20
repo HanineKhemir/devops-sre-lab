@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="422" viewBox="0 0 640 422">
+<rect width="640" height="422" rx="8" fill="#0d1117"/>
+<rect width="640" height="30" rx="8" fill="#21262d"/>
+<rect y="22" width="640" height="8" fill="#21262d"/>
+<circle cx="18" cy="15" r="6" fill="#ff5f56"/>
+<circle cx="38" cy="15" r="6" fill="#ffbd2e"/>
+<circle cx="58" cy="15" r="6" fill="#27c93f"/>
+<text x="320.0" y="20" fill="#8b949e" font-family="Menlo,monospace" font-size="12" text-anchor="middle">Prometheus — recording rules SLO</text>
+<g font-family="Menlo,Consolas,monospace" font-size="13" xml:space="preserve" style="white-space:pre">
+<text x="16" y="60" fill="#7ee787">promql&gt; up{job="kubernetes-pods",namespace="catalog"}</text>
+<text x="16" y="78" fill="#e6edf3">  pod=catalog-api-68576f9d4c-7vff8              1.0</text>
+<text x="16" y="96" fill="#e6edf3">  pod=catalog-api-68576f9d4c-rt5xl              1.0</text>
+<text x="16" y="114" fill="#e6edf3">  pod=catalog-api-68576f9d4c-4wxtb              1.0</text>
+<text x="16" y="132" fill="#e6edf3"></text>
+<text x="16" y="150" fill="#7ee787">promql&gt; slo:sli_error:ratio_rate5m</text>
+<text x="16" y="168" fill="#e6edf3">  slo=latency                                   0.0121</text>
+<text x="16" y="186" fill="#e6edf3">  slo=availability                              0.0044</text>
+<text x="16" y="204" fill="#e6edf3"></text>
+<text x="16" y="222" fill="#7ee787">promql&gt; slo:burn_rate:1h</text>
+<text x="16" y="240" fill="#e6edf3">  slo=latency                                   0.2496</text>
+<text x="16" y="258" fill="#e6edf3">  slo=availability                              0.8889</text>
+<text x="16" y="276" fill="#e6edf3"></text>
+<text x="16" y="294" fill="#7ee787">promql&gt; slo:error_budget_remaining:ratio</text>
+<text x="16" y="312" fill="#e6edf3">  slo=latency                                   0.7504</text>
+<text x="16" y="330" fill="#e6edf3">  slo=availability                              0.1111</text>
+<text x="16" y="348" fill="#e6edf3"></text>
+<text x="16" y="366" fill="#7ee787">promql&gt; slo:error_budget:ratio</text>
+<text x="16" y="384" fill="#e6edf3">  slo=availability                              0.005</text>
+<text x="16" y="402" fill="#e6edf3">  slo=latency                                   0.05</text>
+</g>
+</svg>

@@ -1,0 +1,33 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="890" height="458" viewBox="0 0 890 458">
+<rect width="890" height="458" rx="8" fill="#0d1117"/>
+<rect width="890" height="30" rx="8" fill="#21262d"/>
+<rect y="22" width="890" height="8" fill="#21262d"/>
+<circle cx="18" cy="15" r="6" fill="#ff5f56"/>
+<circle cx="38" cy="15" r="6" fill="#ffbd2e"/>
+<circle cx="58" cy="15" r="6" fill="#27c93f"/>
+<text x="445.0" y="20" fill="#8b949e" font-family="Menlo,monospace" font-size="12" text-anchor="middle">kubectl — ArgoCD GitOps</text>
+<g font-family="Menlo,Consolas,monospace" font-size="13" xml:space="preserve" style="white-space:pre">
+<text x="16" y="60" fill="#7ee787">$ kubectl -n argocd get applications</text>
+<text x="16" y="78" fill="#e6edf3">NAME                  SYNC STATUS   HEALTH STATUS</text>
+<text x="16" y="96" fill="#79c0ff">catalog-api           Synced        Healthy</text>
+<text x="16" y="114" fill="#79c0ff">gatekeeper-policies   Synced        Healthy</text>
+<text x="16" y="132" fill="#e6edf3">noncompliant-demo     OutOfSync     Missing</text>
+<text x="16" y="150" fill="#e6edf3"></text>
+<text x="16" y="168" fill="#7ee787">$ kubectl -n argocd get app noncompliant-demo -o jsonpath={.status.operationState.message}</text>
+<text x="16" y="186" fill="#ff7b72">one or more objects failed to apply, reason: admission webhook "validation.gatekeeper.sh" denied the request: </text>
+<text x="16" y="204" fill="#e6edf3">[disallow-latest-tag] container &lt;app&gt; uses forbidden tag 'latest' (image: nginx:latest),admission webhook "val</text>
+<text x="16" y="222" fill="#ff7b72">idation.gatekeeper.sh" denied the request: [require-cpu-memory-requests-limits] container &lt;app&gt; must set resou</text>
+<text x="16" y="240" fill="#e6edf3">rces.limits.cpu</text>
+<text x="16" y="258" fill="#e6edf3">[require-cpu-memory-requests-limits] container &lt;app&gt; must set resources.limits.memory</text>
+<text x="16" y="276" fill="#e6edf3">[require-cpu-memory-requests-limits] container &lt;app&gt; must set resources.requests.cpu</text>
+<text x="16" y="294" fill="#e6edf3">[require-cpu-memory-requests-limits] container &lt;app&gt; must set resources.requests.memory,admission webhook "val</text>
+<text x="16" y="312" fill="#ff7b72">idation.gatekeeper.sh" denied the request: [disallow-latest-tag] container &lt;app&gt; has no image tag, which defau</text>
+<text x="16" y="330" fill="#e6edf3">lts to 'latest' (image: nginx) (retried 1 times).</text>
+<text x="16" y="348" fill="#e6edf3"></text>
+<text x="16" y="366" fill="#7ee787">$ kubectl -n catalog get pods</text>
+<text x="16" y="384" fill="#e6edf3">NAME                           READY   STATUS    RESTARTS   AGE</text>
+<text x="16" y="402" fill="#79c0ff">catalog-api-68576f9d4c-4wxtb   1/1     Running   0          6m42s</text>
+<text x="16" y="420" fill="#79c0ff">catalog-api-68576f9d4c-7vff8   1/1     Running   0          6m42s</text>
+<text x="16" y="438" fill="#79c0ff">catalog-api-68576f9d4c-rt5xl   1/1     Running   0          6m42s</text>
+</g>
+</svg>

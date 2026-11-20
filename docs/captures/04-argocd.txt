@@ -1,0 +1,22 @@
+$ kubectl -n argocd get applications
+NAME                  SYNC STATUS   HEALTH STATUS
+catalog-api           Synced        Healthy
+gatekeeper-policies   Synced        Healthy
+noncompliant-demo     OutOfSync     Missing
+
+$ kubectl -n argocd get app noncompliant-demo -o jsonpath={.status.operationState.message}
+one or more objects failed to apply, reason: admission webhook "validation.gatekeeper.sh" denied the request: 
+[disallow-latest-tag] container <app> uses forbidden tag 'latest' (image: nginx:latest),admission webhook "val
+idation.gatekeeper.sh" denied the request: [require-cpu-memory-requests-limits] container <app> must set resou
+rces.limits.cpu
+[require-cpu-memory-requests-limits] container <app> must set resources.limits.memory
+[require-cpu-memory-requests-limits] container <app> must set resources.requests.cpu
+[require-cpu-memory-requests-limits] container <app> must set resources.requests.memory,admission webhook "val
+idation.gatekeeper.sh" denied the request: [disallow-latest-tag] container <app> has no image tag, which defau
+lts to 'latest' (image: nginx) (retried 1 times).
+
+$ kubectl -n catalog get pods
+NAME                           READY   STATUS    RESTARTS   AGE
+catalog-api-68576f9d4c-4wxtb   1/1     Running   0          6m42s
+catalog-api-68576f9d4c-7vff8   1/1     Running   0          6m42s
+catalog-api-68576f9d4c-rt5xl   1/1     Running   0          6m42s

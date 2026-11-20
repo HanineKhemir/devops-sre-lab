@@ -1,0 +1,21 @@
+promql> up{job="kubernetes-pods",namespace="catalog"}
+  pod=catalog-api-68576f9d4c-7vff8              1.0
+  pod=catalog-api-68576f9d4c-rt5xl              1.0
+  pod=catalog-api-68576f9d4c-4wxtb              1.0
+
+promql> slo:sli_error:ratio_rate5m
+  slo=latency                                   0.0121
+  slo=availability                              0.0044
+
+promql> slo:burn_rate:1h
+  slo=latency                                   0.2496
+  slo=availability                              0.8889
+
+promql> slo:error_budget_remaining:ratio
+  slo=latency                                   0.7504
+  slo=availability                              0.1111
+
+promql> slo:error_budget:ratio
+  slo=availability                              0.005
+  slo=latency                                   0.05
+

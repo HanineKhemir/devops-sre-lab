@@ -1,0 +1,10 @@
+$ trivy image --severity CRITICAL --exit-code 1 catalog-api:dev
+
+Report Summary
+
+┌──────────────────────────────────────────────────────────────────────────────────┬────────────┬─────────────────┬─────────┐
+│                                      Target                                      │    Type    │ Vulnerabilities │ Secrets │
+│ ... (python packages: 0 CRITICAL) ...
+
+$ echo $?
+0

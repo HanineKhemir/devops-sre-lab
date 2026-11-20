@@ -1,0 +1,16 @@
+logcli> {namespace="catalog", level="error"}  (limit 1)
+{
+    "timestamp": "2026-11-20T15:29:38.161885+00:00",
+    "level": "error",
+    "logger": "catalog",
+    "message": "simulated downstream failure",
+    "trace_id": "24922fdd04417e5337b217607012383e",
+    "span_id": "663c113c9788ad9b",
+    "endpoint": "/flaky"
+}
+
+$ curl tempo:3200/api/traces/24922fdd04417e5337b217607012383e
+  span GET /flaky http send       service=catalog-api     0.02 ms  STATUS_CODE_ERROR
+  span GET /flaky http send       service=catalog-api     0.01 ms  UNSET
+  span GET /flaky http send       service=catalog-api     0.01 ms  UNSET
+  span GET /flaky                 service=catalog-api     0.80 ms  STATUS_CODE_ERROR

@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="975" height="638" viewBox="0 0 975 638">
+<rect width="975" height="638" rx="8" fill="#0d1117"/>
+<rect width="975" height="30" rx="8" fill="#21262d"/>
+<rect y="22" width="975" height="8" fill="#21262d"/>
+<circle cx="18" cy="15" r="6" fill="#ff5f56"/>
+<circle cx="38" cy="15" r="6" fill="#ffbd2e"/>
+<circle cx="58" cy="15" r="6" fill="#27c93f"/>
+<text x="487.5" y="20" fill="#8b949e" font-family="Menlo,monospace" font-size="12" text-anchor="middle">kubectl — OPA Gatekeeper admission</text>
+<g font-family="Menlo,Consolas,monospace" font-size="13" xml:space="preserve" style="white-space:pre">
+<text x="16" y="60" fill="#7ee787">$ kubectl get constrainttemplates</text>
+<text x="16" y="78" fill="#e6edf3">NAME                   AGE</text>
+<text x="16" y="96" fill="#e6edf3">k8sdisallowlatesttag   25m</text>
+<text x="16" y="114" fill="#e6edf3">k8srequiredresources   25m</text>
+<text x="16" y="132" fill="#e6edf3"></text>
+<text x="16" y="150" fill="#7ee787">$ kubectl get constraints</text>
+<text x="16" y="168" fill="#e6edf3">NAME                                                                 ENFORCEMENT-ACTION   TOTAL-VIOLATIONS</text>
+<text x="16" y="186" fill="#e6edf3">k8sdisallowlatesttag.constraints.gatekeeper.sh/disallow-latest-tag   deny                 0</text>
+<text x="16" y="204" fill="#e6edf3"></text>
+<text x="16" y="222" fill="#e6edf3">NAME                                                                                ENFORCEMENT-ACTION   TOTAL-VIOLATIONS</text>
+<text x="16" y="240" fill="#e6edf3">k8srequiredresources.constraints.gatekeeper.sh/require-cpu-memory-requests-limits   deny                 0</text>
+<text x="16" y="258" fill="#e6edf3"></text>
+<text x="16" y="276" fill="#7ee787">$ kubectl apply --dry-run=server -f policies/tests/bad-latest-tag.yaml</text>
+<text x="16" y="294" fill="#ff7b72">Error from server (Forbidden): error when creating "policies/tests/bad-latest-tag.yaml": admission webhook "va</text>
+<text x="16" y="312" fill="#ff7b72">lidation.gatekeeper.sh" denied the request: [disallow-latest-tag] container &lt;app&gt; uses forbidden tag 'latest' </text>
+<text x="16" y="330" fill="#e6edf3">(image: nginx:latest)</text>
+<text x="16" y="348" fill="#e6edf3"></text>
+<text x="16" y="366" fill="#7ee787">$ kubectl apply --dry-run=server -f policies/tests/bad-no-tag.yaml</text>
+<text x="16" y="384" fill="#ff7b72">Error from server (Forbidden): error when creating "policies/tests/bad-no-tag.yaml": admission webhook "valida</text>
+<text x="16" y="402" fill="#ff7b72">tion.gatekeeper.sh" denied the request: [disallow-latest-tag] container &lt;app&gt; has no image tag, which defaults</text>
+<text x="16" y="420" fill="#e6edf3"> to 'latest' (image: nginx)</text>
+<text x="16" y="438" fill="#e6edf3"></text>
+<text x="16" y="456" fill="#7ee787">$ kubectl apply --dry-run=server -f policies/tests/bad-no-resources.yaml</text>
+<text x="16" y="474" fill="#ff7b72">Error from server (Forbidden): error when creating "policies/tests/bad-no-resources.yaml": admission webhook "</text>
+<text x="16" y="492" fill="#ff7b72">validation.gatekeeper.sh" denied the request: [require-cpu-memory-requests-limits] container &lt;app&gt; must set re</text>
+<text x="16" y="510" fill="#e6edf3">sources.limits.cpu</text>
+<text x="16" y="528" fill="#e6edf3">[require-cpu-memory-requests-limits] container &lt;app&gt; must set resources.limits.memory</text>
+<text x="16" y="546" fill="#e6edf3">[require-cpu-memory-requests-limits] container &lt;app&gt; must set resources.requests.cpu</text>
+<text x="16" y="564" fill="#e6edf3">[require-cpu-memory-requests-limits] container &lt;app&gt; must set resources.requests.memory</text>
+<text x="16" y="582" fill="#e6edf3"></text>
+<text x="16" y="600" fill="#7ee787">$ kubectl apply --dry-run=server -f policies/tests/good-compliant.yaml</text>
+<text x="16" y="618" fill="#79c0ff">deployment.apps/good-compliant created (server dry run)</text>
+</g>
+</svg>

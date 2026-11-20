@@ -1,0 +1,32 @@
+$ kubectl get constrainttemplates
+NAME                   AGE
+k8sdisallowlatesttag   25m
+k8srequiredresources   25m
+
+$ kubectl get constraints
+NAME                                                                 ENFORCEMENT-ACTION   TOTAL-VIOLATIONS
+k8sdisallowlatesttag.constraints.gatekeeper.sh/disallow-latest-tag   deny                 0
+
+NAME                                                                                ENFORCEMENT-ACTION   TOTAL-VIOLATIONS
+k8srequiredresources.constraints.gatekeeper.sh/require-cpu-memory-requests-limits   deny                 0
+
+$ kubectl apply --dry-run=server -f policies/tests/bad-latest-tag.yaml
+Error from server (Forbidden): error when creating "policies/tests/bad-latest-tag.yaml": admission webhook "va
+lidation.gatekeeper.sh" denied the request: [disallow-latest-tag] container <app> uses forbidden tag 'latest' 
+(image: nginx:latest)
+
+$ kubectl apply --dry-run=server -f policies/tests/bad-no-tag.yaml
+Error from server (Forbidden): error when creating "policies/tests/bad-no-tag.yaml": admission webhook "valida
+tion.gatekeeper.sh" denied the request: [disallow-latest-tag] container <app> has no image tag, which defaults
+ to 'latest' (image: nginx)
+
+$ kubectl apply --dry-run=server -f policies/tests/bad-no-resources.yaml
+Error from server (Forbidden): error when creating "policies/tests/bad-no-resources.yaml": admission webhook "
+validation.gatekeeper.sh" denied the request: [require-cpu-memory-requests-limits] container <app> must set re
+sources.limits.cpu
+[require-cpu-memory-requests-limits] container <app> must set resources.limits.memory
+[require-cpu-memory-requests-limits] container <app> must set resources.requests.cpu
+[require-cpu-memory-requests-limits] container <app> must set resources.requests.memory
+
+$ kubectl apply --dry-run=server -f policies/tests/good-compliant.yaml
+deployment.apps/good-compliant created (server dry run)
