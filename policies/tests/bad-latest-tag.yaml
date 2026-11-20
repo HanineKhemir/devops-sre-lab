@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: bad-latest-tag, namespace: catalog }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: bad-latest-tag } }
+  template:
+    metadata: { labels: { app: bad-latest-tag } }
+    spec:
+      containers:
+        - name: app
+          image: nginx:latest
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 128Mi }

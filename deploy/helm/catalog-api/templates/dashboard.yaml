@@ -1,0 +1,12 @@
+{{- if .Values.dashboard.enabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "catalog.name" . }}-dashboard
+  labels:
+    {{- include "catalog.labels" . | nindent 4 }}
+    grafana_dashboard: "1"
+data:
+  catalog-sre.json: |-
+{{ .Files.Get "dashboards/catalog-sre.json" | indent 4 }}
+{{- end }}

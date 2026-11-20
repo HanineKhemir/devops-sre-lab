@@ -1,0 +1,35 @@
+replicaCount: 3
+
+image:
+  repository: ghcr.io/haninekhemir/catalog-api
+  # Overwritten by CI with the commit SHA. Never "latest" (Gatekeeper rejects it).
+  tag: "0.1.0-local"
+  pullPolicy: IfNotPresent
+
+service:
+  type: NodePort
+  port: 80
+  nodePort: 30080
+
+resources:
+  requests: { cpu: 250m, memory: 128Mi }
+  limits: { cpu: "1", memory: 256Mi }
+
+app:
+  flakyErrorRate: "0.05"
+  checkoutDelayMinMs: "20"
+  checkoutDelayMaxMs: "220"
+  otlpEndpoint: http://tempo.observability.svc:4317
+
+slo:
+  enabled: true
+  window: 30d
+  availabilityTarget: 0.995   # HTTP status < 500
+  latencyTarget: 0.95         # requests served in < 200 ms
+  latencyThresholdSeconds: "0.2"   # must equal a histogram bucket boundary
+  burnRate:
+    critical: 14.4   # 2 % of the 30d budget in 1h
+    warning: 6       # 5 % of the 30d budget in 6h
+
+dashboard:
+  enabled: true

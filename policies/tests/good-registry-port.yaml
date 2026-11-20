@@ -1,0 +1,15 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata: { name: good-registry-port, namespace: catalog }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: good-registry-port } }
+  template:
+    metadata: { labels: { app: good-registry-port } }
+    spec:
+      containers:
+        - name: app
+          image: localhost:5000/nginx:1.27.3
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 200m, memory: 128Mi }

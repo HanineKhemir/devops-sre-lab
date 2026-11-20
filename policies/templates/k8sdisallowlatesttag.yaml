@@ -1,0 +1,86 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8sdisallowlatesttag
+  annotations:
+    description: >-
+      Rejects containers whose image uses the "latest" tag or no tag at all
+      (which Kubernetes resolves to "latest"). Digest-pinned images are allowed.
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sDisallowLatestTag
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            exemptImages:
+              type: array
+              description: Image prefixes that are exempt from the rule.
+              items:
+                type: string
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8sdisallowlatesttag
+
+        # Pod spec location depends on the workload kind.
+        pod_spec(obj) = spec {
+          obj.kind == "Pod"
+          spec := obj.spec
+        }
+        pod_spec(obj) = spec {
+          obj.kind == "CronJob"
+          spec := obj.spec.jobTemplate.spec.template.spec
+        }
+        pod_spec(obj) = spec {
+          not obj.kind == "Pod"
+          not obj.kind == "CronJob"
+          spec := obj.spec.template.spec
+        }
+
+        containers[c] {
+          c := pod_spec(input.review.object)[field][_]
+          field_is_container_list(field)
+        }
+
+        field_is_container_list("containers")
+        field_is_container_list("initContainers")
+        field_is_container_list("ephemeralContainers")
+
+        exempt(image) {
+          prefix := input.parameters.exemptImages[_]
+          startswith(image, prefix)
+        }
+
+        # Last path segment, e.g. "ghcr.io:443/org/app:1.2" -> "app:1.2".
+        last_segment(image) = seg {
+          parts := split(image, "/")
+          seg := parts[count(parts) - 1]
+        }
+
+        has_digest(image) { contains(image, "@") }
+
+        tag(image) = t {
+          not has_digest(image)
+          seg := last_segment(image)
+          contains(seg, ":")
+          parts := split(seg, ":")
+          t := parts[count(parts) - 1]
+        }
+
+        violation[{"msg": msg}] {
+          c := containers[_]
+          not exempt(c.image)
+          tag(c.image) == "latest"
+          msg := sprintf("container <%v> uses forbidden tag 'latest' (image: %v)", [c.name, c.image])
+        }
+
+        violation[{"msg": msg}] {
+          c := containers[_]
+          not exempt(c.image)
+          not has_digest(c.image)
+          not contains(last_segment(c.image), ":")
+          msg := sprintf("container <%v> has no image tag, which defaults to 'latest' (image: %v)", [c.name, c.image])
+        }

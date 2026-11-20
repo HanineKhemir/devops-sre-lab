@@ -1,0 +1,107 @@
+{{- if .Values.slo.enabled }}
+{{- /*
+SLO rules for catalog-api, following the multi-window, multi-burn-rate
+method (Google SRE Workbook, ch. 5).
+
+  error budget          = 1 - SLO target
+  burn rate             = observed bad-event ratio / error budget
+  budget consumed in T  = burn rate * T / SLO window
+
+  critical: 14.4 * 1h / 720h = 2 % of the 30d budget in 1h  (paired with 5m)
+  warning :    6 * 6h / 720h = 5 % of the 30d budget in 6h  (paired with 30m)
+
+The short window makes the alert stop quickly once the problem is fixed.
+*/ -}}
+{{- $sel := printf "namespace=\"%s\", app=\"%s\"" .Release.Namespace (include "catalog.name" .) -}}
+{{- $metric := "http_server_request_duration_seconds" -}}
+{{- $availBudget := subf 1 .Values.slo.availabilityTarget | printf "%.4f" -}}
+{{- $latBudget := subf 1 .Values.slo.latencyTarget | printf "%.4f" -}}
+{{- $windows := list "5m" "30m" "1h" "6h" "1d" "3d" .Values.slo.window -}}
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ include "catalog.name" . }}-slo
+  labels: {{- include "catalog.labels" . | nindent 4 }}
+spec:
+  groups:
+    - name: catalog-api-sli
+      interval: 30s
+      rules:
+        # Request rate (all requests, used by the dashboard).
+        - record: catalog:http_requests:rate1m
+          expr: sum(rate({{ $metric }}_count{ {{- $sel -}} }[1m]))
+        {{- range $w := $windows }}
+        # Availability SLI: share of requests answered with a 5xx.
+        - record: slo:sli_error:ratio_rate{{ $w }}
+          labels: { slo: availability, service: catalog-api }
+          expr: |
+            sum(rate({{ $metric }}_count{ {{- $sel -}}, http_response_status_code=~"5.."}[{{ $w }}]))
+            /
+            sum(rate({{ $metric }}_count{ {{- $sel -}} }[{{ $w }}]))
+        # Latency SLI: share of requests slower than the threshold.
+        - record: slo:sli_error:ratio_rate{{ $w }}
+          labels: { slo: latency, service: catalog-api }
+          expr: |
+            1 - (
+              sum(rate({{ $metric }}_bucket{ {{- $sel -}}, le="{{ $.Values.slo.latencyThresholdSeconds }}"}[{{ $w }}]))
+              /
+              sum(rate({{ $metric }}_count{ {{- $sel -}} }[{{ $w }}]))
+            )
+        {{- end }}
+
+    - name: catalog-api-slo-budget
+      interval: 30s
+      rules:
+        - record: slo:error_budget:ratio
+          labels: { slo: availability, service: catalog-api }
+          expr: vector({{ $availBudget }})
+        - record: slo:error_budget:ratio
+          labels: { slo: latency, service: catalog-api }
+          expr: vector({{ $latBudget }})
+        {{- range $w := list "5m" "30m" "1h" "6h" }}
+        - record: slo:burn_rate:{{ $w }}
+          expr: slo:sli_error:ratio_rate{{ $w }} / on(slo, service) slo:error_budget:ratio
+        {{- end }}
+        # Fraction of the {{ .Values.slo.window }} error budget still available
+        # (1 = untouched, 0 = exhausted, < 0 = SLO violated).
+        - record: slo:error_budget_remaining:ratio
+          expr: 1 - (slo:sli_error:ratio_rate{{ .Values.slo.window }} / on(slo, service) slo:error_budget:ratio)
+
+    - name: catalog-api-slo-alerts
+      rules:
+        {{- range $slo := list "availability" "latency" }}
+        - alert: CatalogApi{{ title $slo }}BudgetBurnCritical
+          expr: |
+            slo:burn_rate:1h{slo="{{ $slo }}", service="catalog-api"} > {{ $.Values.slo.burnRate.critical }}
+            and
+            slo:burn_rate:5m{slo="{{ $slo }}", service="catalog-api"} > {{ $.Values.slo.burnRate.critical }}
+          for: 1m
+          labels:
+            severity: critical
+            slo: {{ $slo }}
+            service: catalog-api
+          annotations:
+            summary: "catalog-api {{ $slo }} SLO: fast burn (> {{ $.Values.slo.burnRate.critical }}x)"
+            description: >-
+              Burn rate is {{`{{ $value | printf "%.1f" }}`}}x over 1h (and 5m).
+              At this pace 2% of the 30-day error budget is gone within 1 hour.
+              Page the on-call engineer.
+            runbook_url: https://github.com/HanineKhemir/devops-sre-lab/blob/main/docs/runbook.md
+        - alert: CatalogApi{{ title $slo }}BudgetBurnWarning
+          expr: |
+            slo:burn_rate:6h{slo="{{ $slo }}", service="catalog-api"} > {{ $.Values.slo.burnRate.warning }}
+            and
+            slo:burn_rate:30m{slo="{{ $slo }}", service="catalog-api"} > {{ $.Values.slo.burnRate.warning }}
+          for: 5m
+          labels:
+            severity: warning
+            slo: {{ $slo }}
+            service: catalog-api
+          annotations:
+            summary: "catalog-api {{ $slo }} SLO: slow burn (> {{ $.Values.slo.burnRate.warning }}x)"
+            description: >-
+              Burn rate is {{`{{ $value | printf "%.1f" }}`}}x over 6h (and 30m).
+              At this pace 5% of the 30-day error budget is gone within 6 hours.
+            runbook_url: https://github.com/HanineKhemir/devops-sre-lab/blob/main/docs/runbook.md
+        {{- end }}
+{{- end }}

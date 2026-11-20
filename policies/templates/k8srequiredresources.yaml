@@ -1,0 +1,62 @@
+apiVersion: templates.gatekeeper.sh/v1
+kind: ConstraintTemplate
+metadata:
+  name: k8srequiredresources
+  annotations:
+    description: >-
+      Requires every container to declare resources.requests and
+      resources.limits for both cpu and memory.
+spec:
+  crd:
+    spec:
+      names:
+        kind: K8sRequiredResources
+      validation:
+        openAPIV3Schema:
+          type: object
+          properties:
+            requests:
+              type: array
+              items: { type: string }
+            limits:
+              type: array
+              items: { type: string }
+  targets:
+    - target: admission.k8s.gatekeeper.sh
+      rego: |
+        package k8srequiredresources
+
+        pod_spec(obj) = spec {
+          obj.kind == "Pod"
+          spec := obj.spec
+        }
+        pod_spec(obj) = spec {
+          obj.kind == "CronJob"
+          spec := obj.spec.jobTemplate.spec.template.spec
+        }
+        pod_spec(obj) = spec {
+          not obj.kind == "Pod"
+          not obj.kind == "CronJob"
+          spec := obj.spec.template.spec
+        }
+
+        containers[c] { c := pod_spec(input.review.object).containers[_] }
+        containers[c] { c := pod_spec(input.review.object).initContainers[_] }
+
+        missing(c, section, res) {
+          not c.resources[section][res]
+        }
+
+        violation[{"msg": msg}] {
+          c := containers[_]
+          res := input.parameters.requests[_]
+          missing(c, "requests", res)
+          msg := sprintf("container <%v> must set resources.requests.%v", [c.name, res])
+        }
+
+        violation[{"msg": msg}] {
+          c := containers[_]
+          res := input.parameters.limits[_]
+          missing(c, "limits", res)
+          msg := sprintf("container <%v> must set resources.limits.%v", [c.name, res])
+        }

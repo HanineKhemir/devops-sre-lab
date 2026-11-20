@@ -1,0 +1,55 @@
+# Ships stdout of pods in the catalog namespace to Loki.
+alloy:
+  configMap:
+    content: |
+      discovery.kubernetes "pods" {
+        role = "pod"
+        namespaces { names = ["catalog"] }
+      }
+
+      discovery.relabel "pods" {
+        targets = discovery.kubernetes.pods.targets
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          target_label  = "app"
+        }
+      }
+
+      // Reads logs through the Kubernetes API (no hostPath mounts needed).
+      loki.source.kubernetes "pods" {
+        targets    = discovery.relabel.pods.output
+        forward_to = [loki.process.json.receiver]
+      }
+
+      // Promote level to a label; keep trace_id as structured metadata so
+      // queries can filter on it without a high-cardinality label.
+      loki.process "json" {
+        stage.json {
+          expressions = { level = "level", trace_id = "trace_id" }
+        }
+        stage.labels {
+          values = { level = "" }
+        }
+        stage.structured_metadata {
+          values = { trace_id = "" }
+        }
+        forward_to = [loki.write.default.receiver]
+      }
+
+      loki.write "default" {
+        endpoint {
+          url = "http://loki.observability.svc:3100/loki/api/v1/push"
+        }
+      }

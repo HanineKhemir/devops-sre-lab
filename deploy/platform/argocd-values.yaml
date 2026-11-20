@@ -1,0 +1,12 @@
+configs:
+  params:
+    server.insecure: true
+server:
+  service:
+    type: NodePort
+    nodePortHttp: 30443
+    nodePortHttps: 30444
+dex:
+  enabled: false
+notifications:
+  enabled: false
