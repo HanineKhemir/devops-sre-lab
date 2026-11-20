@@ -1,288 +1,344 @@
-# Rapport SRE — Continuous Delivery, Quality & Security Gates, Observabilité Cloud-Native
+<p align="center">
+  <img src="assets/header-insat.png" alt="République Tunisienne — Ministère de l'Enseignement Supérieur et de la Recherche Scientifique — Université de Carthage — INSAT" width="100%">
+</p>
+
+<h1 align="center">TP 4 : Continuous Delivery, Quality &amp; Security Gates et Ingénierie SRE</h1>
+<h3 align="center">Compte rendu — Pipeline CI/CD sécurisé, GitOps avec OPA Gatekeeper, observabilité OpenTelemetry et Error Budget</h3>
+
+<p align="center">
+  <b>Réalisé par :</b><br>
+  Youssef Khalifa<br>
+  Hanine Khemir<br>
+  Oussema Said<br>
+  Ahmed Amine Bououd
+</p>
+
+<p align="center">
+  <b>Classe :</b> GL4 — Groupe 1
+</p>
+
+<div class="pagebreak"></div>
+
+---
 
 **Dépôt :** https://github.com/HanineKhemir/devops-sre-lab
-**Auteur :** Hanine Khemir — INSAT
-**Environnement :** cluster Kubernetes local `kind` (v1.36), ArgoCD 3.6, OPA Gatekeeper 3.23, kube-prometheus-stack 93.6, Loki 3.6, Tempo 2.9, Grafana Alloy 1.22, k6 1.4
 
-> Toutes les captures de ce rapport sont des sorties réelles de terminal, capturées sur le
-> cluster du TP (`docs/captures/*.txt`) puis rendues en image (`scripts/term2svg.py`).
-> Les sections marquées **⏳ En cours** seront complétées lors de la prochaine séance.
+**Application :** `catalog-api`, un microservice REST de catalogue produit (Python 3.12, FastAPI) avec un endpoint lent (`/checkout`) et un endpoint à erreurs intermittentes (`/flaky`).
 
----
+**Outils :** pytest, SonarCloud, Trivy 0.76.2, GitHub Actions, kind (Kubernetes v1.36.1), Helm 4, ArgoCD 3.6, OPA Gatekeeper 3.23, OpenTelemetry SDK 1.29, kube-prometheus-stack 93.6 (Prometheus, Alertmanager, Grafana), Loki 3.6, Tempo 2.9, Grafana Alloy 1.22, k6 1.4
 
-## 0. Avancement
+**Preuves :** toutes les sorties citées dans ce rapport sont dans le dossier [`docs/captures/`](captures/), et les résultats k6 bruts dans `k6/results/`.
 
-| Étape | Livrable | Statut |
-|---|---|---|
-| 1 | Microservice FastAPI + `/metrics`, `/checkout` (lent), `/flaky` (erreurs) | ✅ |
-| 1 | Tests pytest, rapport Cobertura (`coverage.xml`) + LCOV, couverture ≥ 85 % | ✅ 100 % |
-| 2 | Quality Gate SonarCloud bloquante dans la CI | ✅ configurée — ⏳ capture PR en échec |
-| 2 | Gatekeeper : 2 ConstraintTemplates Rego (`latest` interdit, requests/limits) | ✅ vérifié |
-| 3 | Pipeline CI : Lint & Test → Sonar → Build → Trivy → Push → bump GitOps | ✅ écrite — ⏳ secret `SONAR_TOKEN` |
-| 3 | ArgoCD (Helm) + rejet d'un manifeste non conforme | ✅ vérifié |
-| 4 | OpenTelemetry (traces + logs JSON + métriques), Prometheus, Loki, Tempo, corrélation `trace_id` | ✅ vérifié |
-| 5 | SLI/SLO, règles burn rate multi-fenêtres, Alertmanager, dashboard RED | ✅ déployés |
-| 5 | Test de charge k6 (ramp 100 / stress 500 / spike 1500 VU) + analyse d'incident | ⏳ En cours |
+**Figures :** les captures « terminal » sont les sorties réelles des commandes, enregistrées en `.txt` puis mises en forme par [`scripts/term2svg.py`](../scripts/term2svg.py) (couleurs ajoutées, texte inchangé ; `...` marque une coupure).
 
 ---
 
-## 1. Architecture
+## 1. Le problème
 
-```
- Développeur ── PR ──► GitHub Actions ─────────────────────────────────────────────┐
-                        Lint&Test ► SonarCloud QG ► Build ► Trivy ► Push GHCR      │
-                                                                  │                ▼
-                                                     bump tag dans values.yaml (Git)
-                                                                                    │
-  kind cluster ◄──────────────── ArgoCD (sync auto) ◄───────────────────────────────┘
-   │   ▲ admission : OPA Gatekeeper (latest interdit, requests/limits obligatoires)
-   │
-   ├─ ns catalog        catalog-api ×3  (FastAPI + SDK OpenTelemetry)
-   │                       ├─ /metrics ──scrape (annotations)──► Prometheus ─► Alertmanager ─► pager / slack
-   │                       ├─ traces OTLP gRPC ────────────────► Tempo  ┐
-   │                       └─ logs JSON stdout ─► Alloy ─────────► Loki   ├─► Grafana (dashboard RED + SLO)
-   └─ k6 (conteneur sur le réseau kind) ─► NodePort 30080                ┘
-```
+Aux TP précédents, nous avons sécurisé le code, les dépendances, l'image et l'exécution. Ce TP traite la **livraison** et l'**exploitation** : comment être sûr que seul du code de qualité arrive en production, que le cluster refuse ce qui n'est pas conforme, et que l'on sait **mesurer** si le service tient ses promesses.
 
-| Composant | Fichiers |
+| Question | Partie du TP |
 |---|---|
-| Application | `app/main.py`, `app/catalog.py`, `app/telemetry.py`, `app/config.py` |
-| Tests | `tests/` (58 tests) |
-| Image | `Dockerfile` (multi-stage, utilisateur non-root UID 10001) |
-| CI | `.github/workflows/ci.yml`, `sonar-project.properties`, `scripts/check_quality_gate.py` |
-| Politiques | `policies/templates/*.yaml` (Rego), `policies/constraints/*.yaml`, `policies/tests/` |
-| GitOps | `deploy/helm/catalog-api/`, `deploy/argocd/` |
-| Observabilité | `deploy/observability/*-values.yaml` |
-| SRE | `deploy/helm/catalog-api/templates/prometheusrule.yaml`, `deploy/helm/catalog-api/dashboards/catalog-sre.json`, `k6/load-test.js` |
+| Le code est-il testé et assez couvert pour être livré ? | 2. Microservice & tests |
+| Qui bloque un code de mauvaise qualité ou un manifeste dangereux ? | 3. Quality Gate & Gatekeeper |
+| Comment passe-t-on d'un commit à un déploiement sans intervention manuelle ? | 4. CI/CD & GitOps |
+| Quand une requête échoue, peut-on suivre son chemin (métriques, logs, trace) ? | 5. Observabilité |
+| Le service respecte-t-il son contrat, et que se passe-t-il sous forte charge ? | 6. SRE |
 
 ---
 
-## 2. Étape 1 — Microservice & couverture de tests
+## 2. Microservice & couverture de tests
 
-API REST de catalogue produit (FastAPI) :
+### 2.1 L'application
 
 | Endpoint | Rôle |
 |---|---|
-| `GET /products`, `GET /products/{id}`, `POST /products` | Catalogue (pagination, validation) |
-| `POST /checkout` | Traitement lent simulé (`CHECKOUT_DELAY_MIN_MS`..`MAX_MS`, défaut 20–220 ms) + décrément atomique du stock |
-| `GET /flaky` | Erreur 500 intermittente (`FLAKY_ERROR_RATE`, défaut 5 %) |
-| `GET /metrics` | Format Prometheus (exporter OpenTelemetry) |
-| `GET /health` | Sondes liveness / readiness |
+| `GET /products`, `GET /products/{id}`, `POST /products` | Catalogue : pagination, validation des entrées |
+| `POST /checkout` | Paiement simulé lent (20 à 220 ms, configurable) + décrément **atomique** du stock |
+| `GET /flaky` | Renvoie une erreur 500 dans 5 % des cas (`FLAKY_ERROR_RATE`) |
+| `GET /metrics` | Métriques au format Prometheus (exporter OpenTelemetry) |
+| `GET /health` | Sondes liveness / readiness Kubernetes |
 
-**Cas limites testés :** stock exact puis épuisé, panier vide, quantité 0/négative/> 1000, produit inconnu,
-atomicité du checkout (une ligne invalide n'applique aucune ligne), prix à 3 décimales, nom vide après
-`strip()`, pagination hors bornes, taux d'erreur aux bornes 0 et 1 et comparaison stricte `<`,
-variables d'environnement invalides, exception non gérée → 500, format JSON des logs avec et sans span.
+Le délai et le taux d'erreur sont lus dans les variables d'environnement. Dans les tests, l'aléa (`random`) et le `sleep` sont **injectés** dans `create_app()`, ce qui rend `/flaky` et `/checkout` déterministes.
 
-L'aléa (`random`) et le `sleep` sont injectés dans `create_app()`, ce qui rend `/flaky` et `/checkout`
-déterministes en test.
+### 2.2 Tests unitaires et cas limites
 
-![pytest](captures/01-pytest.svg)
+58 tests (`tests/`) couvrent les cas nominaux et les cas limites suivants :
 
-Critère de validation : `--cov-fail-under=85` dans `pyproject.toml`. **Résultat : 100 % (lignes + branches).**
+* stock exact puis épuisé (409), produit inconnu (404) ;
+* panier vide, quantité 0, négative ou supérieure à 1000 (422) ;
+* **atomicité** du checkout : une ligne invalide n'applique aucune ligne du panier ;
+* prix à 3 décimales, nom vide après `strip()`, pagination hors bornes ;
+* `/flaky` aux bornes 0 et 1, et comparaison stricte `<` au seuil exact ;
+* variables d'environnement invalides, exception non gérée (500) ;
+* format JSON des logs avec et sans span actif.
+
+<p align="center"><img src="captures/01-pytest.svg" width="100%"><br><em>Figure 1 — pytest : 58 tests réussis, couverture lignes + branches de 100 % (rapports Cobertura et LCOV générés)</em></p>
+
+**Critère de validation :** `--cov-fail-under=85` (`pyproject.toml`) fait échouer pytest, et donc la CI, sous 85 %. Résultat : **100 %**.
 
 ---
 
-## 3. Étape 2 — Contrats de qualité & Policy Enforcement
+## 3. Quality Gate SonarQube & Policy Enforcement
 
-### 3.1 Quality Gate SonarQube (SonarCloud)
+### 3.1 Quality Gate SonarCloud
 
-* `sonar-project.properties` : sources `app/`, tests `tests/`, couverture `coverage.xml` (Cobertura),
-  `sonar.qualitygate.wait=true` → le scanner **échoue** si la gate est rouge, ce qui bloque le job.
-* Seuils exigés par le sujet, sur le **nouveau code** :
+`sonar-project.properties` déclare les sources, les tests et le rapport de couverture `coverage.xml`. L'option `sonar.qualitygate.wait=true` fait **échouer le scanner** quand la gate est rouge, ce qui bloque le job et donc la suite du pipeline.
 
-| Condition | Seuil |
+| Condition sur le nouveau code | Bloque si |
 |---|---|
-| Coverage on New Code | < 85 % → échec |
-| Security Hotspots Reviewed | < 100 % (au moins 1 hotspot non revu) → échec |
-| Duplicated Lines on New Code | > 3 % → échec |
+| Coverage on New Code | < 85 % |
+| Security Hotspots | au moins 1 hotspot non revu |
+| Duplicated Lines on New Code | > 3 % |
 
-* En complément, `scripts/check_quality_gate.py` interroge l'API Sonar (`/api/measures/component`)
-  et fait échouer la CI sur ces trois mêmes seuils, même si l'organisation SonarCloud ne permet pas
-  de personnaliser la gate (offre gratuite = « Sonar way »).
+L'offre gratuite de SonarCloud impose la gate « Sonar way » (80 % de couverture). Pour appliquer **exactement** les seuils du sujet, le script [`scripts/check_quality_gate.py`](../scripts/check_quality_gate.py) relit les mesures via l'API Sonar (`/api/measures/component`) et fait échouer la CI sur ces trois conditions.
 
-**⏳ Capture à ajouter :** PR non conforme (par ex. une fonction non testée + un `subprocess` avec `shell=True`)
-→ check « SonarQube Analysis & Quality Gate » rouge sur la PR.
-Pré-requis : créer le projet sur sonarcloud.io, désactiver l'« Automatic Analysis », ajouter le secret
-`SONAR_TOKEN` au dépôt.
+> **Reste à faire :** la capture d'une PR bloquée par la Quality Gate sera ajoutée après l'activation du projet SonarCloud et l'ajout du secret `SONAR_TOKEN` au dépôt. En attendant, le job Sonar échoue à chaque push, ce qui bloque bien le build et le déploiement.
 
 ### 3.2 OPA Gatekeeper
 
 Deux `ConstraintTemplate` écrits en Rego (`policies/templates/`) :
 
-1. **`K8sDisallowLatestTag`** : refuse `:latest` **et** les images sans tag (que Kubernetes résout en
-   `latest`). Gère les registres avec port (`localhost:5000/app:1.0`) et autorise les digests (`@sha256:`).
-   Couvre `containers`, `initContainers`, `ephemeralContainers`.
-2. **`K8sRequiredResources`** : exige `requests.cpu`, `requests.memory`, `limits.cpu`, `limits.memory`
-   sur chaque conteneur (paramétrable).
+| Contrainte | Règle | Détails |
+|---|---|---|
+| `K8sDisallowLatestTag` | Interdit le tag `latest` | Refuse aussi les images **sans tag** (Kubernetes les résout en `latest`). Accepte les registres avec port (`localhost:5000/app:1.0`) et les digests (`@sha256:`). Vérifie `containers`, `initContainers` et `ephemeralContainers`. |
+| `K8sRequiredResources` | `requests` et `limits` CPU **et** mémoire obligatoires | Liste des ressources paramétrable dans la contrainte. |
 
-Les contraintes ciblent les objets `Pod` **et** les workloads (`Deployment`, `StatefulSet`,
-`DaemonSet`, `ReplicaSet`, `Job`, `CronJob`) : le rejet a lieu au moment du `kubectl apply` ou de la
-synchro ArgoCD, et non plus tard au niveau du ReplicaSet. Elles sont limitées au namespace `catalog`
-pour ne pas bloquer les charts de la plateforme.
+Deux choix de conception :
 
-![gatekeeper](captures/03-gatekeeper.svg)
+1. Les contraintes ciblent les **Pods et les workloads** (`Deployment`, `StatefulSet`, `DaemonSet`, `ReplicaSet`, `Job`, `CronJob`). Si elles ne ciblaient que les Pods, `kubectl apply` d'un Deployment réussirait, et l'échec n'apparaîtrait que plus tard, silencieusement, au niveau du ReplicaSet.
+2. Elles sont limitées au namespace `catalog`, pour ne pas bloquer les charts de la plateforme (ArgoCD, Prometheus…) qui ne sont pas sous notre contrôle.
+
+<p align="center"><img src="captures/03-gatekeeper.svg" width="100%"><br><em>Figure 2 — Gatekeeper : refus de l'image <code>:latest</code>, de l'image sans tag et du pod sans requests/limits ; le manifeste conforme est accepté</em></p>
 
 ---
 
-## 4. Étape 3 — Pipeline CI/CD & GitOps
+## 4. Pipeline CI/CD & déploiement continu (GitOps)
 
-### 4.1 Pipeline GitHub Actions (`.github/workflows/ci.yml`)
+### 4.1 Pipeline GitHub Actions
 
-```
-Lint & Test ──► SonarQube Analysis & Quality Gate ──► Build ► Trivy (CRITICAL = fail) ► Push GHCR ──► GitOps bump
- ruff, pytest     scan + qualitygate.wait=true          image taguée sha-<commit>         (push main)   values.yaml
- cov ≥ 85 %       + check_quality_gate.py               jamais "latest"                                 [skip ci]
-```
+Fichier : [`.github/workflows/ci.yml`](../.github/workflows/ci.yml)
 
-* **Gestion des secrets** : `SONAR_TOKEN` en secret GitHub, push GHCR avec le `GITHUB_TOKEN` éphémère
-  (permission `packages: write` sur ce job seulement), permissions par défaut `contents: read`.
-  Côté cluster : mot de passe Grafana et URLs des webhooks Alertmanager dans des `Secret` Kubernetes,
-  jamais dans Git.
-* **Trivy** : l'image est construite localement (`load: true`), scannée, et poussée **seulement si**
-  aucune vulnérabilité CRITICAL n'est trouvée. Un rapport SARIF (toutes sévérités) est publié dans
-  l'onglet *Security* de GitHub.
-* Sur une PR, la chaîne s'exécute jusqu'au scan Trivy sans pousser l'image.
+| # | Job | Bloque si | Détails |
+|---|---|---|---|
+| 1 | Lint & Test | erreur `ruff`, test en échec, couverture < 85 % | Publie `coverage.xml` comme artefact |
+| 2 | SonarQube Analysis & Quality Gate | Quality Gate rouge | Historique Git complet (`fetch-depth: 0`) pour détecter le nouveau code |
+| 3 | Build | — | Image construite **localement** (`load: true`), taguée `sha-<commit>` et jamais `latest` |
+| 4 | Trivy | au moins une vulnérabilité **CRITICAL** | `--severity CRITICAL --exit-code 1` ; rapport SARIF complet dans l'onglet *Security* |
+| 5 | Push GHCR | — | Uniquement sur `main`, et seulement si Trivy est passé |
+| 6 | GitOps bump | — | Écrit le nouveau tag dans `values.yaml` et le commite (`[skip ci]`) ; ArgoCD déploie |
 
-![trivy](captures/02-trivy.svg)
+**Gestion des secrets :**
+
+* `SONAR_TOKEN` est un secret GitHub.
+* Le push vers GHCR utilise le `GITHUB_TOKEN` éphémère, avec `packages: write` sur ce seul job ; les autres jobs n'ont que `contents: read`.
+* Dans le cluster, le mot de passe Grafana et les URLs des webhooks Alertmanager sont des `Secret` Kubernetes, jamais commités.
+
+<p align="center"><img src="captures/02-trivy.svg" width="100%"><br><em>Figure 3 — Trivy sur l'image <code>catalog-api</code> : 0 vulnérabilité CRITICAL, code de sortie 0, donc le push est autorisé</em></p>
 
 ### 4.2 Déploiement continu avec ArgoCD
 
-* Chart Helm `deploy/helm/catalog-api` (Deployment ×3, Service NodePort, PDB, PrometheusRule, dashboard).
-* `deploy/argocd/catalog-api.yaml` : sync automatique, `prune` + `selfHeal`.
-* `deploy/argocd/gatekeeper-policies.yaml` : les politiques sont elles aussi versionnées et synchronisées.
-* **Test de rejet** : `deploy/argocd/demo/noncompliant-app.yaml` pointe vers `policies/tests/bad-*.yaml`.
-  ArgoCD tente la synchro et l'API Server la refuse via le webhook Gatekeeper :
+* Chart Helm [`deploy/helm/catalog-api`](../deploy/helm/catalog-api) : Deployment de 3 réplicas (non-root, système de fichiers en lecture seule, capacités supprimées), Service NodePort, PodDisruptionBudget, `PrometheusRule` des SLO et dashboard Grafana.
+* Application ArgoCD [`catalog-api`](../deploy/argocd/catalog-api.yaml) : synchronisation automatique, avec `prune` et `selfHeal`.
+* Application [`gatekeeper-policies`](../deploy/argocd/gatekeeper-policies.yaml) : les politiques Rego sont elles aussi versionnées et déployées par GitOps.
 
-![argocd](captures/04-argocd.svg)
+**Test de rejet.** L'application [`noncompliant-demo`](../deploy/argocd/demo/noncompliant-app.yaml) pointe vers les manifestes non conformes `policies/tests/bad-*.yaml`. ArgoCD tente de les synchroniser, et l'API Server les refuse via le webhook Gatekeeper :
+
+<p align="center"><img src="captures/04-argocd.svg" width="100%"><br><em>Figure 4 — ArgoCD : <code>catalog-api</code> et les politiques sont synchronisés ; la synchronisation de <code>noncompliant-demo</code> est rejetée par Gatekeeper au niveau de l'API Server</em></p>
 
 ---
 
-## 5. Étape 4 — Instrumentation & stack d'observabilité
+## 5. Instrumentation & stack d'observabilité
 
-### 5.1 OpenTelemetry dans le microservice (`app/telemetry.py`)
+### 5.1 OpenTelemetry dans le microservice
+
+Fichier : [`app/telemetry.py`](../app/telemetry.py)
 
 | Signal | Implémentation | Destination |
 |---|---|---|
-| Traces | `TracerProvider` + `FastAPIInstrumentor` + span manuel `payment.authorize` dans `/checkout` | OTLP gRPC → Tempo |
-| Métriques | `MeterProvider` + `PrometheusMetricReader`, histogramme `http.server.request.duration` | `/metrics` → Prometheus |
-| Logs | `JsonFormatter` : chaque ligne contient `trace_id` et `span_id` du span courant | stdout → Alloy → Loki |
+| Traces | `TracerProvider` + `FastAPIInstrumentor` + span manuel `payment.authorize` dans `/checkout` | OTLP gRPC → **Tempo** |
+| Métriques | `MeterProvider` + `PrometheusMetricReader`, histogramme `http.server.request.duration` | `/metrics` → **Prometheus** |
+| Logs | `JsonFormatter` : chaque ligne JSON contient le `trace_id` et le `span_id` du span courant | stdout → Alloy → **Loki** |
 
-**Choix important :** les buckets de l'histogramme sont explicites et incluent **0.2 s**, la borne du
-SLO de latence. Avec les buckets par défaut, « % de requêtes < 200 ms » ne pourrait être qu'estimé.
-Les labels sont limités (`http_route` au format template, méthode, code) pour éviter l'explosion de cardinalité.
-Un seul worker uvicorn par pod : chaque processus a son propre registre de métriques, on monte donc en
-charge par réplicas.
+Trois choix importants :
 
-### 5.2 Stack
+1. **Buckets explicites contenant 0,2 s.** C'est la borne du SLO de latence. Avec les buckets par défaut, la part de requêtes sous 200 ms ne pourrait être qu'estimée ; avec cette borne, elle est **exacte**.
+2. **Labels à faible cardinalité.** La route est enregistrée au format template (`/products/{product_id}`), pas avec l'identifiant réel. Les métriques automatiques de l'instrumentation FastAPI (labels `http_host`, `net_host_port`…) sont désactivées.
+3. **Un worker uvicorn par pod.** Chaque processus a son propre registre de métriques, et Prometheus ne scrape qu'un processus par pod. On monte donc en charge par réplicas.
 
-* **Prometheus** : `additionalScrapeConfigs` en rôle `pod` qui garde les pods annotés
-  `prometheus.io/scrape: "true"` et utilise `prometheus.io/port` et `prometheus.io/path`.
-* **Loki** (single binary) alimenté par **Alloy**, qui lit les logs du namespace `catalog`, promeut `level`
-  en label et garde `trace_id` en *structured metadata*.
-* **Tempo** reçoit l'OTLP gRPC (4317).
-* **Grafana** : datasource Loki avec *derived field* `trace_id` → Tempo, et datasource Tempo avec
-  *traces-to-logs* → Loki. On navigue ainsi dans les deux sens.
+### 5.2 La stack
 
-![prometheus](captures/05-prometheus.svg)
+* **Prometheus :** un `additionalScrapeConfigs` en rôle `pod` garde les pods annotés `prometheus.io/scrape: "true"` et lit les annotations `prometheus.io/port` et `prometheus.io/path`.
+* **Loki** (single binary) reçoit les logs de **Grafana Alloy**. Alloy lit les logs du namespace `catalog`, transforme `level` en label et garde `trace_id` en *structured metadata* (pas de label à forte cardinalité).
+* **Tempo** reçoit les traces en OTLP gRPC (port 4317).
+* **Grafana :** la datasource Loki a un *derived field* `trace_id` qui ouvre la trace dans Tempo, et la datasource Tempo a le *traces-to-logs* vers Loki. On navigue ainsi dans les deux sens entre logs et traces.
 
-Corrélation vérifiée de bout en bout : une ligne d'erreur dans Loki, puis la trace correspondante dans Tempo
-(même `trace_id`, span en `STATUS_CODE_ERROR`) :
+<p align="center"><img src="captures/05-prometheus.svg" width="100%"><br><em>Figure 5 — Prometheus : les 3 pods sont découverts par annotation ; les recording rules SLI, burn rate et budget sont calculées</em></p>
 
-![loki-tempo](captures/06-loki-tempo.svg)
+<p align="center"><img src="captures/06-loki-tempo.svg" width="100%"><br><em>Figure 6 — Corrélation Logs ↔ Traces : une ligne d'erreur JSON dans Loki, puis la trace de même <code>trace_id</code> dans Tempo (span en erreur)</em></p>
 
 ---
 
-## 6. Étape 5 — Ingénierie SRE
+## 6. Ingénierie SRE, performance & Error Budget
 
 ### 6.1 Contrat de service (SLI / SLO)
 
 | SLO | SLI (PromQL) | Objectif | Error budget |
 |---|---|---|---|
-| Disponibilité | `sum(rate(..._count{code=~"5.."}[w])) / sum(rate(..._count[w]))` | 99,5 % de requêtes avec statut < 500 | 0,5 % |
-| Latence | `1 - sum(rate(..._bucket{le="0.2"}[w])) / sum(rate(..._count[w]))` | 95 % des requêtes en < 200 ms (p95 ≤ 200 ms) | 5 % |
+| Disponibilité | `sum(rate(…_count{code=~"5.."}[w])) / sum(rate(…_count[w]))` | 99,5 % de requêtes avec statut < 500 | **0,5 %** |
+| Latence | `1 - sum(rate(…_bucket{le="0.2"}[w])) / sum(rate(…_count[w]))` | 95 % des requêtes en < 200 ms (p95 ≤ 200 ms) | **5 %** |
 
-Fenêtre glissante : **30 jours**. Les ratios sont pré-calculés en *recording rules*
-(`slo:sli_error:ratio_rate{5m,30m,1h,6h,1d,3d,30d}`).
+* **Fenêtre glissante :** 30 jours.
+* **Recording rules :** les ratios sont pré-calculés pour 5m, 30m, 1h, 6h, 1d, 3d et 30d (`slo:sli_error:ratio_rate<w>`), dans [`prometheusrule.yaml`](../deploy/helm/catalog-api/templates/prometheusrule.yaml).
 
 ### 6.2 Calcul de l'Error Budget
 
 ```
-error budget          = 1 − objectif SLO                       (0,005 ou 0,05)
-burn rate (fenêtre w) = taux d'erreur observé sur w / error budget
-budget restant        = 1 − taux d'erreur sur 30 j / error budget
+error budget            = 1 − objectif SLO                    → 0,005 (dispo) / 0,05 (latence)
+burn rate (fenêtre w)   = taux d'erreur observé sur w / error budget
+budget restant          = 1 − taux d'erreur sur 30 j / error budget
+budget consommé en T    = burn rate × T / 30 j
 ```
 
-Exemple (disponibilité) : sur 30 j, le budget est 0,5 % × 30 j = **3 h 36 min** d'indisponibilité
-équivalente. Avec 1 000 000 de requêtes par mois, 5 000 réponses 5xx sont tolérées.
+**Exemple (disponibilité) :**
 
-Jauge Grafana « Error Budget Remaining » : `slo:error_budget_remaining:ratio{slo="availability"}`
-(1 = intact, 0 = épuisé, < 0 = SLO violé).
+* Un budget de 0,5 % sur 30 jours équivaut à **3 h 36 min** d'indisponibilité totale.
+* Pour 1 000 000 de requêtes par mois, **5 000** réponses 5xx sont tolérées.
+* Un burn rate de 1 consomme exactement le budget en 30 jours.
 
 ### 6.3 Alerting multi-window multi-burn-rate
 
-| Alerte | Condition | Signification | Routage |
+| Alerte | Condition | Budget consommé | Routage Alertmanager |
 |---|---|---|---|
-| `…BudgetBurnCritical` | burn rate **1h > 14,4** ET **5m > 14,4** | 14,4 × 1 h / 720 h = **2 %** du budget en 1 h | `severity=critical` → receiver **pager** |
-| `…BudgetBurnWarning` | burn rate **6h > 6** ET **30m > 6** | 6 × 6 h / 720 h = **5 %** du budget en 6 h | `severity=warning` → receiver **slack** |
+| **Critical** (page) | burn rate **1h > 14,4** ET **5m > 14,4** | 14,4 × 1 h / 720 h = **2 % en 1 h** | `severity=critical` → receiver `pager` |
+| **Warning** (Slack) | burn rate **6h > 6** ET **30m > 6** | 6 × 6 h / 720 h = **5 % en 6 h** | `severity=warning` → receiver `slack` |
 
-La fenêtre courte (5 m / 30 m) fait retomber l'alerte rapidement une fois l'incident résolu.
-Une `inhibit_rule` coupe le warning quand le critical du même SLO est actif.
-Les règles existent pour les deux SLO (disponibilité et latence), soit 4 alertes au total.
-Pour la démo locale, les receivers pointent vers `alert-sink` (`deploy/observability/alert-sink.yaml`),
-qui journalise chaque notification. Il suffit de mettre une vraie URL Slack dans le secret
-`alertmanager-receivers` pour notifier un vrai canal.
+* **Rôle des deux fenêtres :** la fenêtre longue évite les fausses alertes sur un pic bref. La fenêtre courte fait retomber l'alerte dès que l'incident est résolu.
+* **Inhibition :** une `inhibit_rule` coupe le warning tant que le critical du même SLO est actif.
+* Les quatre alertes (deux par SLO) ont un `runbook_url` vers [`docs/runbook.md`](runbook.md).
+* **Receivers en local :** ils pointent vers `alert-sink`, un petit service qui journalise chaque notification reçue. Pour notifier un vrai canal, il suffit de mettre l'URL Slack dans le secret `alertmanager-receivers`.
 
 ### 6.4 Dashboard Grafana (méthode RED)
 
-`Catalog API — SRE (RED + Error Budget)`, provisionné automatiquement par ConfigMap (sidecar Grafana) :
+Le dashboard *Catalog API — SRE (RED + Error Budget)* est provisionné automatiquement par ConfigMap (sidecar Grafana). Il contient :
 
-* **Rate** : RPS total et par route
-* **Errors** : 5xx/s par route + % d'erreur global (seuil 0,5 %)
-* **Duration** : p50 / p90 / p95 / p99 (`histogram_quantile`), seuil 200 ms ; p95 par route
-* **Error Budget Remaining** : jauges disponibilité et latence (30 j) + SLI 30 j
-* **Burn rate** 5m / 30m / 1h / 6h avec lignes de seuil 6 et 14,4, annotations des alertes en cours
-* Panneau de logs d'erreur Loki (clic sur `trace_id` → Tempo)
+| Panneau | Requête |
+|---|---|
+| **Rate** | RPS total et par route |
+| **Errors** | 5xx/s par route et % d'erreur global, avec une ligne de seuil à 0,5 % |
+| **Duration** | p50 / p90 / p95 / p99 (`histogram_quantile`) avec une ligne à 200 ms, et p95 par route |
+| **Error Budget Remaining** | Jauges disponibilité et latence (`slo:error_budget_remaining:ratio`) et SLI sur 30 j |
+| **Burn rate** | 5m / 30m / 1h / 6h avec les seuils 6 et 14,4, et annotations des alertes |
+| Logs | Logs d'erreur Loki (clic sur `trace_id` → Tempo) |
 
-### 6.5 Test de charge k6 (`k6/load-test.js`)
+### 6.5 Test de charge k6
+
+Fichier : [`k6/load-test.js`](../k6/load-test.js), lancé par [`scripts/run-k6.sh`](../scripts/run-k6.sh). k6 tourne dans un conteneur sur le réseau Docker de kind, ce qui évite le goulot d'étranglement d'un `kubectl port-forward`.
 
 | Scénario | Profil |
 |---|---|
-| Ramp-up | 0 → 100 VU en 2 min, palier 3 min |
-| Stress | 0 → 500 VU en 2 min, palier **10 min** |
+| Ramp-up | 0 → 100 VU en 2 min, palier de 3 min |
+| Stress | 0 → 500 VU en 2 min, palier de **10 min** |
 | Spike | 0 → **1500 VU en 5 s**, maintenu **30 s** |
 
-Mix de trafic : 55 % liste, 25 % détail, 12 % checkout, 8 % flaky. Les seuils k6 reprennent les SLO
-(`checks rate ≥ 0.995`, `p(95) ≤ 200 ms`, global et par scénario). k6 tourne dans un conteneur
-attaché au réseau Docker `kind` (`scripts/run-k6.sh`), sans goulot `kubectl port-forward`.
+* **Mix de trafic :** 55 % liste, 25 % détail, 12 % checkout, 8 % `/flaky`.
+* **Seuils k6 = SLO :**
+  * `checks rate ≥ 0.995` (aucun 5xx et aucune requête sans réponse) ;
+  * `p(95) ≤ 200 ms`, au global et pour chaque scénario.
 
-### 6.6 Analyse d'incident simulé — ⏳ En cours
+<p align="center"><img src="captures/07-k6.svg" width="100%"><br><em>Figure 7 — Résultats k6 : 524 077 requêtes ; le SLO de disponibilité tient (0,40 % d'erreurs), le SLO de latence est violé en stress et en spike</em></p>
 
-Le run complet (≈ 21 min) est en cours d'exécution. Seront ajoutés :
+### 6.6 Analyse de l'incident
 
-1. le résumé k6 par scénario (RPS, % 5xx, p50/p90/p95/p99, seuils PASS/FAIL) ;
-2. le graphe Burn Rate de Grafana pendant le stress et le spike ;
-3. l'alerte Prometheus déclenchée (`ALERTS{alertstate="firing"}`) et la notification reçue par Alertmanager ;
-4. la chronologie (début de charge → dépassement du seuil → alerte → retour à la normale), la cause
-   (saturation CPU des 3 pods, limite 1 vCPU, 1 worker) et les actions correctives (HPA, worker
-   async, cache, ajustement des limites).
+**Ce qui s'est passé.**
+
+| Scénario | p95 | p99 | SLO latence |
+|---|---|---|---|
+| Ramp-up (100 VU) | 139,8 ms | 205,9 ms | respecté |
+| Stress (500 VU) | 270,4 ms | 825,2 ms | **violé** |
+| Spike (1500 VU) | 257,2 ms | 968,7 ms | **violé** |
+
+* Avec 3 pods limités à 1 vCPU et un seul worker Python chacun, le service **sature en CPU** au-delà de quelques centaines de VU : les requêtes font la queue, et la queue de distribution (p95, p99) explose.
+* La médiane reste faible (1,9 ms en stress), car la plupart des requêtes `GET /products` sont servies avant la saturation.
+* La disponibilité tient : 2 107 erreurs sur 524 077 requêtes, soit **0,40 %**, sous le budget de 0,5 %. Ce sont surtout les 5 % d'erreurs de `/flaky`, plus quelques connexions refusées pendant le spike.
+
+<p align="center"><img src="captures/08-burn-rate.svg" width="100%"><br><em>Figure 8 — Burn rate maximum pendant le test : 1,6 (disponibilité) et 1,8 (latence), loin des seuils 6 et 14,4 ; aucune alerte déclenchée</em></p>
+
+**Pourquoi aucune alerte n'a été déclenchée.** C'est le comportement attendu de la méthode multi-burn-rate :
+
+* Le SLO de latence porte sur **toutes** les requêtes : le budget de 5 % n'est consommé que par les requêtes au-dessus de 200 ms.
+* Même en stress, environ 90 % des requêtes restaient sous 200 ms (p90 ≈ 170 ms). Le taux de « mauvaises » requêtes est donc resté autour de 6 à 9 %, soit un burn rate de 1,3 à 1,8.
+* À ce rythme, le budget mensuel serait épuisé en 17 à 23 jours : c'est sérieux, mais ce n'est **pas** une urgence qui justifie de réveiller quelqu'un. Une violation du p95 pendant quelques minutes n'est pas un incident de production.
+* Les seuils 6 et 14,4 sont faits pour alerter quand une part importante du budget est consommée en quelques heures, pas pour réagir à un test de charge de 20 minutes.
+
+**Remarque sur la durée du test.** Le test a duré 1 h 58 au lieu des 21 minutes prévues, et une requête du scénario stress est restée bloquée plus d'une heure (max = 3 931 s). Cela correspond très probablement à une mise en veille du poste ou à une pause de Docker Desktop pendant le test ; les percentiles p50 à p99 ne sont pas affectés par cette requête isolée.
+
+**Actions correctives proposées :**
+
+| Problème | Action |
+|---|---|
+| Saturation CPU sous 500 VU | HorizontalPodAutoscaler sur le CPU (3 à 10 réplicas) + metrics-server |
+| Un seul worker par pod | Plusieurs workers avec un registre Prometheus multi-processus |
+| Requêtes `GET /products` répétitives | Cache (HTTP `Cache-Control` ou Redis) |
+| Requêtes qui attendent indéfiniment | Timeout côté serveur et limite de concurrence (load shedding : répondre vite par un 503 plutôt que laisser la requête attendre) |
+
+> **Suite du TP :** pour valider de bout en bout la chaîne d'alerte, nous injecterons une panne volontaire par GitOps (`FLAKY_ERROR_RATE=0.5` et limite CPU réduite) pendant un scénario de stress, afin de déclencher les alertes Warning et Critical, puis nous annulerons le commit et observerons leur résolution.
 
 ---
 
-## 7. Reproduire
+## 7. Bilan
+
+| Couche | Mécanisme | Résultat |
+|---|---|---|
+| Code | pytest + `--cov-fail-under=85` | 58 tests, **100 %** de couverture |
+| Qualité | SonarCloud `qualitygate.wait` + seuils du sujet vérifiés par API | Pipeline bloqué si la gate est rouge |
+| Image | Trivy `--severity CRITICAL --exit-code 1` avant tout push | **0 CRITICAL** ; image non-root, tag = SHA du commit |
+| Cluster | Gatekeeper : `latest` interdit, requests/limits obligatoires | Manifestes non conformes **refusés par l'API Server**, y compris via ArgoCD |
+| Livraison | GitHub Actions → GHCR → commit GitOps → ArgoCD | Aucun `kubectl` manuel pour déployer |
+| Observabilité | OpenTelemetry → Prometheus / Loki / Tempo → Grafana | Logs et traces corrélés par `trace_id` |
+| SRE | SLO 99,5 % et p95 ≤ 200 ms, burn rate 14,4 / 6 | Violation de la latence mesurée sous charge ; budget suivi en continu |
+
+Chaque porte arrête une catégorie de problème différente :
+
+* les **tests et la Quality Gate** arrêtent le mauvais code ;
+* **Trivy** arrête les images vulnérables ;
+* **Gatekeeper** arrête les déploiements dangereux, même s'ils contournent la CI ;
+* les **SLO** disent, une fois en production, si le service tient sa promesse et à quel rythme on consomme la marge d'erreur.
+
+**Pistes d'amélioration :**
+
+* HPA et tests de charge automatisés dans la CI, sur un environnement de préproduction ;
+* signature des images (cosign) et contrainte Gatekeeper n'acceptant que des images signées ;
+* Argo Rollouts pour un déploiement *canary* piloté par le burn rate ;
+* Tempo *metrics-generator* pour le graphe de services.
+
+---
+
+## Annexe : reproduire le TP
 
 ```bash
 kind create cluster --config deploy/kind/cluster.yaml
-helm install gatekeeper gatekeeper/gatekeeper -n gatekeeper-system --create-namespace
-helm install argocd argo/argo-cd -n argocd --create-namespace -f deploy/platform/argocd-values.yaml
-# secrets grafana-admin et alertmanager-receivers dans le namespace monitoring, puis :
-helm install kps prometheus-community/kube-prometheus-stack -n monitoring -f deploy/observability/kube-prometheus-stack-values.yaml
-helm install loki grafana/loki   -n observability -f deploy/observability/loki-values.yaml
-helm install tempo grafana/tempo -n observability -f deploy/observability/tempo-values.yaml
-helm install alloy grafana/alloy -n observability -f deploy/observability/alloy-values.yaml
-kubectl apply -f deploy/observability/alert-sink.yaml -f deploy/argocd/
-scripts/run-k6.sh all          # ou ramp | stress | spike
+docker build -t ghcr.io/haninekhemir/catalog-api:0.1.0-local .
+kind load docker-image ghcr.io/haninekhemir/catalog-api:0.1.0-local --name sre-lab
+
+# Plateforme
+helm install gatekeeper gatekeeper/gatekeeper --version 3.23.1 -n gatekeeper-system --create-namespace
+helm install argocd argo/argo-cd --version 10.18.2 -n argocd --create-namespace -f deploy/platform/argocd-values.yaml
+
+# Observabilité (créer d'abord les secrets grafana-admin et alertmanager-receivers dans monitoring)
+helm install kps prometheus-community/kube-prometheus-stack --version 93.6.0 -n monitoring \
+  -f deploy/observability/kube-prometheus-stack-values.yaml
+helm install loki  grafana/loki  --version 7.7.0  -n observability --create-namespace -f deploy/observability/loki-values.yaml
+helm install tempo grafana/tempo --version 1.24.4 -n observability -f deploy/observability/tempo-values.yaml
+helm install alloy grafana/alloy --version 1.16.0 -n observability -f deploy/observability/alloy-values.yaml
+kubectl apply -f deploy/observability/alert-sink.yaml
+
+# GitOps (application + politiques)
+kubectl apply -f deploy/argocd/
+kubectl apply -f deploy/argocd/demo/noncompliant-app.yaml     # démonstration du rejet
+
+# Charge
+scripts/run-k6.sh all        # ou : ramp | stress | spike
 ```
 
-Accès : API http://localhost:30080 · Grafana http://localhost:30300 · Prometheus http://localhost:30090 ·
-Alertmanager http://localhost:30093 · ArgoCD http://localhost:30443
+Accès : API http://localhost:30080 · Grafana http://localhost:30300 · Prometheus http://localhost:30090 · Alertmanager http://localhost:30093 · ArgoCD http://localhost:30443

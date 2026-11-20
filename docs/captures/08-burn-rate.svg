@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="788" height="242" viewBox="0 0 788 242">
+<rect width="788" height="242" rx="8" fill="#0d1117"/>
+<rect width="788" height="30" rx="8" fill="#21262d"/>
+<rect y="22" width="788" height="8" fill="#21262d"/>
+<circle cx="18" cy="15" r="6" fill="#ff5f56"/>
+<circle cx="38" cy="15" r="6" fill="#ffbd2e"/>
+<circle cx="58" cy="15" r="6" fill="#27c93f"/>
+<text x="394.0" y="20" fill="#8b949e" font-family="Menlo,monospace" font-size="12" text-anchor="middle">Prometheus — burn rate pendant le test</text>
+<g font-family="Menlo,Consolas,monospace" font-size="13" xml:space="preserve" style="white-space:pre">
+<text x="16" y="60" fill="#7ee787">promql&gt; max(slo:burn_rate:{5m,1h}) by (slo)  -- maximum sur la duree du test (15:24 -&gt; 17:23 UTC)</text>
+<text x="16" y="78" fill="#e6edf3">  burn_rate:5m  slo=availability  max = 1.60</text>
+<text x="16" y="96" fill="#e6edf3">  burn_rate:5m  slo=latency       max = 1.34</text>
+<text x="16" y="114" fill="#e6edf3">  burn_rate:1h  slo=availability  max = 1.60</text>
+<text x="16" y="132" fill="#e6edf3">  burn_rate:1h  slo=latency       max = 1.78</text>
+<text x="16" y="150" fill="#e6edf3"></text>
+<text x="16" y="168" fill="#e6edf3">  seuils : warning &gt; 6 (6h &amp; 30m)   critical &gt; 14.4 (1h &amp; 5m)</text>
+<text x="16" y="186" fill="#e6edf3"></text>
+<text x="16" y="204" fill="#7ee787">promql&gt; ALERTS{service="catalog-api", alertstate="firing"}   (pendant le test)</text>
+<text x="16" y="222" fill="#e6edf3">  (empty) - aucune alerte declenchee</text>
+</g>
+</svg>

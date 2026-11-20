@@ -1,5 +1,5 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1007" height="242" viewBox="0 0 1007 242">
-<rect width="1007" height="242" rx="8" fill="#0d1117"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="1007" height="314" viewBox="0 0 1007 314">
+<rect width="1007" height="314" rx="8" fill="#0d1117"/>
 <rect width="1007" height="30" rx="8" fill="#21262d"/>
 <rect y="22" width="1007" height="8" fill="#21262d"/>
 <circle cx="18" cy="15" r="6" fill="#ff5f56"/>
@@ -8,14 +8,18 @@
 <text x="503.5" y="20" fill="#8b949e" font-family="Menlo,monospace" font-size="12" text-anchor="middle">trivy — scan de l'image (CRITICAL = fail)</text>
 <g font-family="Menlo,Consolas,monospace" font-size="13" xml:space="preserve" style="white-space:pre">
 <text x="16" y="60" fill="#7ee787">$ trivy image --severity CRITICAL --exit-code 1 catalog-api:dev</text>
-<text x="16" y="78" fill="#e6edf3"></text>
-<text x="16" y="96" fill="#e6edf3">Report Summary</text>
-<text x="16" y="114" fill="#e6edf3"></text>
-<text x="16" y="132" fill="#e6edf3">┌──────────────────────────────────────────────────────────────────────────────────┬────────────┬─────────────────┬─────────┐</text>
-<text x="16" y="150" fill="#e6edf3">│                                      Target                                      │    Type    │ Vulnerabilities │ Secrets │</text>
-<text x="16" y="168" fill="#e6edf3">│ ... (python packages: 0 CRITICAL) ...</text>
-<text x="16" y="186" fill="#e6edf3"></text>
-<text x="16" y="204" fill="#7ee787">$ echo $?</text>
-<text x="16" y="222" fill="#e6edf3">0</text>
+<text x="16" y="78" fill="#e6edf3">Report Summary</text>
+<text x="16" y="96" fill="#e6edf3">┌──────────────────────────────────────────────────────────────────────────────────┬────────────┬─────────────────┬─────────┐</text>
+<text x="16" y="114" fill="#e6edf3">│                                      Target                                      │    Type    │ Vulnerabilities │ Secrets │</text>
+<text x="16" y="132" fill="#e6edf3">├──────────────────────────────────────────────────────────────────────────────────┼────────────┼─────────────────┼─────────┤</text>
+<text x="16" y="150" fill="#e6edf3">│ catalog-api:dev (debian 13.7)                                                    │   debian   │        0        │    -    │</text>
+<text x="16" y="168" fill="#e6edf3">├──────────────────────────────────────────────────────────────────────────────────┼────────────┼─────────────────┼─────────┤</text>
+<text x="16" y="186" fill="#e6edf3">│ usr/local/lib/python3.12/site-packages/annotated_types-0.8.0.dist-info/METADATA  │ python-pkg │        0        │    -    │</text>
+<text x="16" y="204" fill="#e6edf3">├──────────────────────────────────────────────────────────────────────────────────┼────────────┼─────────────────┼─────────┤</text>
+<text x="16" y="222" fill="#e6edf3">│ usr/local/lib/python3.12/site-packages/anyio-4.16.0.dist-info/METADATA           │ python-pkg │        0        │    -    │</text>
+<text x="16" y="240" fill="#e6edf3">│ ... (autres paquets python : 0 CRITICAL) ...</text>
+<text x="16" y="258" fill="#e6edf3"></text>
+<text x="16" y="276" fill="#7ee787">$ echo $?</text>
+<text x="16" y="294" fill="#e6edf3">0</text>
 </g>
 </svg>

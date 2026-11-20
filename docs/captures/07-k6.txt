@@ -1,0 +1,19 @@
+$ scripts/run-k6.sh all     # ramp 100 VU -> stress 500 VU -> spike 1500 VU
+scenario         : all
+requests         : 524077 (73.9 req/s)
+5xx / conn errors: 2107 (0.402 %)
+latency p50/p90  : 1.9 ms / 165.1 ms
+latency p95/p99  : 251.4 ms / 830.3 ms
+max VUs          : 1500
+thresholds       :
+  FAIL http_req_duration p(95)<=200
+  PASS checks rate>=0.995
+  FAIL http_req_duration{scenario:spike} p(95)<=200
+  FAIL http_req_duration{scenario:stress} p(95)<=200
+  PASS http_req_duration{scenario:ramp} p(95)<=200
+
+$ python3 -c "<percentiles par scenario>" k6/results/summary-all.json
+  scenario      p50      p90      p95      p99
+  ramp         1.0ms    60.3ms   139.8ms   205.9ms
+  stress       1.9ms   171.5ms   270.4ms   825.2ms
+  spike        4.5ms   166.0ms   257.2ms   968.7ms

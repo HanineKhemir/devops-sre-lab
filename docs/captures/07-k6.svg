@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="404" viewBox="0 0 640 404">
+<rect width="640" height="404" rx="8" fill="#0d1117"/>
+<rect width="640" height="30" rx="8" fill="#21262d"/>
+<rect y="22" width="640" height="8" fill="#21262d"/>
+<circle cx="18" cy="15" r="6" fill="#ff5f56"/>
+<circle cx="38" cy="15" r="6" fill="#ffbd2e"/>
+<circle cx="58" cy="15" r="6" fill="#27c93f"/>
+<text x="320.0" y="20" fill="#8b949e" font-family="Menlo,monospace" font-size="12" text-anchor="middle">k6 — test de charge (ramp / stress / spike)</text>
+<g font-family="Menlo,Consolas,monospace" font-size="13" xml:space="preserve" style="white-space:pre">
+<text x="16" y="60" fill="#7ee787">$ scripts/run-k6.sh all     # ramp 100 VU -&gt; stress 500 VU -&gt; spike 1500 VU</text>
+<text x="16" y="78" fill="#e6edf3">scenario         : all</text>
+<text x="16" y="96" fill="#e6edf3">requests         : 524077 (73.9 req/s)</text>
+<text x="16" y="114" fill="#e6edf3">5xx / conn errors: 2107 (0.402 %)</text>
+<text x="16" y="132" fill="#e6edf3">latency p50/p90  : 1.9 ms / 165.1 ms</text>
+<text x="16" y="150" fill="#e6edf3">latency p95/p99  : 251.4 ms / 830.3 ms</text>
+<text x="16" y="168" fill="#e6edf3">max VUs          : 1500</text>
+<text x="16" y="186" fill="#e6edf3">thresholds       :</text>
+<text x="16" y="204" fill="#ff7b72">  FAIL http_req_duration p(95)&lt;=200</text>
+<text x="16" y="222" fill="#79c0ff">  PASS checks rate&gt;=0.995</text>
+<text x="16" y="240" fill="#ff7b72">  FAIL http_req_duration{scenario:spike} p(95)&lt;=200</text>
+<text x="16" y="258" fill="#ff7b72">  FAIL http_req_duration{scenario:stress} p(95)&lt;=200</text>
+<text x="16" y="276" fill="#79c0ff">  PASS http_req_duration{scenario:ramp} p(95)&lt;=200</text>
+<text x="16" y="294" fill="#e6edf3"></text>
+<text x="16" y="312" fill="#7ee787">$ python3 -c "&lt;percentiles par scenario&gt;" k6/results/summary-all.json</text>
+<text x="16" y="330" fill="#e6edf3">  scenario      p50      p90      p95      p99</text>
+<text x="16" y="348" fill="#e6edf3">  ramp         1.0ms    60.3ms   139.8ms   205.9ms</text>
+<text x="16" y="366" fill="#e6edf3">  stress       1.9ms   171.5ms   270.4ms   825.2ms</text>
+<text x="16" y="384" fill="#e6edf3">  spike        4.5ms   166.0ms   257.2ms   968.7ms</text>
+</g>
+</svg>
